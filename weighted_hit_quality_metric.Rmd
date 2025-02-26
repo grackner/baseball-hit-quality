@@ -145,7 +145,7 @@ plot9 <- ggplot(subset, aes(x=hit_type, y=exit_speed)) + geom_boxplot() +
                y="Exit Speed") + theme(axis.text.x = element_text(angle = 45))
 
 ggplotly(plot9)
-
+```
 
 Model:
 - Exit speed
