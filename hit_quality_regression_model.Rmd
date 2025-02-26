@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 The model is grading ball contact quality. The quality metric for the model will be play_result since it gives us an outcome for which we can grade the success of contact. A single is greater quality than an out which is lower quality. Ultimately, play_result reveals if a hit was able to create an opportunity for scoring which is a good indicator of quality. This model will predict play_result so that outcomes for future hits can be predicted based on a variety of features. The model also reveals which variables are most important to the result of a hit. 
 
-See also: Instead of using one of the data columns as a quality metric, I had an additional idea for a weighted metric. We know that a hit's quality is not solely defined by the outcome of the hit and that the different variables do not have equal effect on quality. Here is my other notebook with the layout of creating a weighted metric (grade). 
+See also: Instead of using one of the data columns as a quality metric, I had an additional idea for a weighted metric. We know that a hits quality is not solely defined by the outcome of the hit and that the different variables do not have equal effect on quality. This notebook is also in the repo. 
 
 ## Loading Libraries & Data
 
@@ -28,7 +28,7 @@ library(plotly)
 library(nnet)
 
 # Read in csv and view df
-df <- read.csv(here("<data source hidden for privacy>"))
+df <- read.csv(here("baseball_data.csv"))
 head(df)
 ```
 
