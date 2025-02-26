@@ -1,0 +1,173 @@
+---
+title: "Baseball Quality Model- Weighted Metric Set-Up"
+author: "Gabrielle Rackner"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+It is difficult to accurately define hit quality as a single value such as play result. It is a good indicator of quality but a good hit can be defined by other metrics such as launch angle, a great field position, etc. and all of these qualities could be summed into a single metric. The idea is that features in the model will be weighted differently based on difficulty, frequency, and importance in scoring. The features themselves were also weighed based on their value. For example, bearing will have an individual weight in the model but also the options with bearing (left field, right field) will have a specific weight. The model is creating a new weighted metric that holistically represents ball quality rather than just the play result outcome.
+
+Ultimately the features for this model were chosen based on a mix of effect on play result and survey information I received from baseball players.
+
+```{r, include=FALSE}
+## Load data and appropriate libraries
+library(here)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(plotly)
+df <- read.csv(here("<data hidden for privacy>"))
+head(df)
+
+```
+
+## EDA and Weight Assignment
+
+I will be investigating several features and their relationships to each other as well as relationship to type of hit and result of the play. Features that influence quality of a hit and each other should be included in the model. Overall, the quality of a hit depends on if the ball makes if out of the infield and can result in a single, double, triple or HR. The features I will be exploring are bearing, pitch type, exit speed, distance, launch angle and hit type.
+
+## Bearing- Field Position
+
+Field position plays a role in the likelihood of a play result. A play hit to left field is more likely to result in a single, double and a home run than in right field. Hits to left field are also less likely to receive an out than one hit to right field. There is not a significant difference between the other play results and field position. In summary, negative bearing should hold a higher weight than positive bearing within the model.
+
+```{r, include = FALSE}
+df =  mutate(df, field_position = ifelse(bearing > 0, "right_field", "left_field"))
+```
+
+```{r, echo = FALSE}
+subset = df %>% filter(play_result != "" & field_position != "NA")
+plot1 <- ggplot(subset, aes(fill=field_position, x=play_result)) + geom_bar(position="dodge") + labs(title = "Play Result Frequency by Field Position", x = "Play Result") + theme(axis.text.x = element_text(angle = 45)) +
+guides(fill=guide_legend(title="Field Position"))
+
+ggplotly(plot1)
+```
+
+### Pitch Type
+
+What makes a pitch difficult? Curveballs and sliders are notably the hardest pitches to hit because of the movement and ability to put some speed on the pitch. Using this data, I will first evaluate difficulty based on the frequency of pitch. Pitchers tend to throw what is the most effective. I will create inital weights using a weighted average by pitch type with adjustments due to baseball knowledge that breaking balls (curveballs and sliders) are some of the most difficult pitches to hit. 
+
+```{r, echo=FALSE}
+# Find pitch types that are used the most frequently
+plot2 <- ggplot(df, aes(x = pitch_type)) + geom_bar(fill='#27251F') +
+  labs(title="Pitch Type Frequency", x = "Pitch Type")
+
+ggplotly(plot2)
+```
+
+
+```{r, echo=FALSE}
+
+plot3 <- ggplot(df, aes(fill=pitch_type, x=play_result)) + geom_bar(position="dodge") + labs(title = "Play Result Frequency by Pitch Type", x = "Play Result") + theme(axis.text.x = element_text(angle = 45)) +
+guides(fill=guide_legend(title="Pitch Type"))
+
+ggplotly(plot3)
+
+```
+* Click and drag a specific play result to view in larger details. 
+
+Four seams, or fastballs are the most frequent type of pitch thrown and are most likely to result in a foul ball or an out. Below are the percent of total weights for each pitch type. 
+
+```{r, echo=FALSE} 
+# weighted Average (Based on percent of total)
+pitch_frequency <- df %>% group_by(pitch_type) %>% count()
+pitch_frequency <- data.frame("Pitch Type" = pitch_frequency$pitch_type,
+                              "Frequency" = pitch_frequency$n,
+                              "Percent of Total" =
+                              paste(round(pitch_frequency$n /sum(pitch_frequency$n)*100), "%"))
+
+plot4 <- plot_ly(type="table",header=list(values=names(pitch_frequency), fill = list(color = c("#AE8F6F", "#AE8F6F"))), cells=list(values=unname(pitch_frequency))) 
+```
+
+### Distance
+
+Quality contact means that the ball is able to escape the infield. A ball that reaches the outfield is less likely to result in an out and more likely to result in a single, double or triple and of course a home run. 
+
+```{r, include=FALSE}
+# Infield resulting in an out vs outfield resulting in an out
+# It is approx 155 feet to the outfield minimum boundary
+df =  mutate(df, field_distance = ifelse(distance > 155, "outfield", "infield"))
+```
+
+```{r, echo = FALSE}
+subset = df %>% filter(play_result != "" & field_distance != "NA")
+plot5 <- ggplot(subset, aes(fill=field_distance, x=play_result)) + geom_bar(position="dodge") + labs(title = "Play Result Frequency Within Infield vs Outfield", x = "Play Result") + theme(axis.text.x = element_text(angle = 45)) +
+guides(fill=guide_legend(title="Field Position"))
+
+ggplotly(plot5)
+```
+
+
+### Exit Speed
+
+Exit speed is extremely important because it affects how far the ball is able to travel. It is important that the ball travels out of the infield because it is less likely to result in an out. There is a positive, linear correlation between exit speed and distance.
+
+Since distance and exit speed are positively correlated, and higher distance means that the hit is more likely to result in an effective play such as an HR, single, double or triple. High exit speed is also related to these play results. 
+
+```{r, echo=FALSE, messages=FALSE, warnings=FALSE}
+# Exit Speed's effect on distance
+plot6 <- ggplot(df, aes(x=exit_speed, y=distance)) + geom_point() + geom_smooth(method=lm) + labs(title="Distance Ball Traveled vs Exit Speed", 
+                          x="Exit Speed", y="Distance")
+
+ggplotly(plot6)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+# Exit speed's effect on the play result
+# Average speed of a specific play result
+subset <- df %>% filter(play_result != "")
+plot7 <- ggplot(subset, aes(x=play_result, y=exit_speed)) + geom_boxplot() +
+  labs(title="Exit Speed Distribution Among Play Results", x="Play Result",
+       y="Exit Speed") + theme(axis.text.x = element_text(angle = 45))
+
+ggplotly(plot7)
+```
+### Hit Type
+
+```{r, echo=FALSE}
+# Effect of hit type on distance
+subset <- df %>% filter(hit_type != "")
+plot8 <- ggplot(subset, aes(x=hit_type, y=distance)) + geom_boxplot() +
+          labs(title="Distribution of Distance Among Hit Types", x="Hit Type") +
+          theme(axis.text.x = element_text(angle = 45))
+
+ggplotly(plot8)
+
+```
+
+```{r, echo=FALSE, warning=FALSE}
+# Effect of hit type on exit speed
+plot9 <- ggplot(subset, aes(x=hit_type, y=exit_speed)) + geom_boxplot() +
+          labs(title="Distribution of Exit Speed Among Hit Types", x="Hit Type",
+               y="Exit Speed") + theme(axis.text.x = element_text(angle = 45))
+
+ggplotly(plot9)
+
+
+Model:
+- Exit speed
+- Pitch Type
+- Bearing
+- Hit Type
+- Launch Angle
+- Distance
+- Outcome of the hit (play result)
+
+## Conclusion of Weights & Next Steps
+
+After weights are applied to all of the features, the coefficients would be created to calculate the weighted metric. 
+
+Exit Speed, Distance, Bearing and Angle will be weighted equally since they are related and dependent on each other. (Example: Within these:
+- Exit Speed (10%): Higher exit speed holds higher weight than lower exit speed
+- Distance (10%): Outfield-qualifying distance is weighed more than infield-qualifying distance
+- Launch Angle (10%): Upward launch angle is weighed more than an initial downward launch angle.
+- Bearing (10%): Left field would be weighed more than right field. 
+
+
+Pitch type (15%) and hit type (15%) would be weighted equally since they have significant impact on play result. Pitch type and hit type are also related. 
+- Pitch types and hit types would be weighted based on a weighted average (calculated by frequency) and then manual adjustments based on common baseball knowledge about difficulty to hit and hit type on play result.
+
+Play result (20%) would be weighed the most because scoring is important to winning games and the better the outcome of a hit, the greater the liklihood to score a run. Play result weights would be ranked based on ordinal values (home run is worth more than an out). 

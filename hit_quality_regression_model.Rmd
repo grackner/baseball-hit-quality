@@ -1,0 +1,229 @@
+---
+title: "Baseball Contact Quality Model"
+author: "Gabrielle Rackner"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+The model is grading ball contact quality. The quality metric for the model will be play_result since it gives us an outcome for which we can grade the success of contact. A single is greater quality than an out which is lower quality. Ultimately, play_result reveals if a hit was able to create an opportunity for scoring which is a good indicator of quality. This model will predict play_result so that outcomes for future hits can be predicted based on a variety of features. The model also reveals which variables are most important to the result of a hit. 
+
+See also: Instead of using one of the data columns as a quality metric, I had an additional idea for a weighted metric. We know that a hit's quality is not solely defined by the outcome of the hit and that the different variables do not have equal effect on quality. Here is my other notebook with the layout of creating a weighted metric (grade). 
+
+## Loading Libraries & Data
+
+```{r, results='hide'}
+# Load necessary libraries
+library(here)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(plotly)
+library(nnet)
+
+# Read in csv and view df
+df <- read.csv(here("<data source hidden for privacy>"))
+head(df)
+```
+
+## Data Cleaning & Manipulation
+
+```{r, results='hide'}
+# Data Cleaning
+# When play_result = "Foul Ball", replace NA in hit_type with "foul_ball"
+df$hit_type <- replace(df$hit_type, df$hit_type == "", "foul_ball")
+df <- df %>% filter(play_result != "")
+
+# Turn categorical variables into factors so they can be used within the model
+
+df$batter_side <- as.factor(df$batter_side)
+df$pitcher_throws <- as.factor(df$pitcher_throws)
+df$hit_type <- as.factor(df$hit_type)
+df$play_result <- as.factor(df$play_result)
+df$venue <- as.factor(df$venue)
+
+# Turn bearing and angle into a flag rather than a number to eliminate having to work with negative values and simplify the model.
+
+# Bearing will now read as left_field/right_field if ball if in right field or not
+df =  mutate(df, bearing = ifelse(bearing > 0, "right_field", "left_field"))
+# Angle will now read as upward/downward if ball is traveling upward or not
+df =  mutate(df, angle = ifelse(angle > 0, "upward", "downward"))
+
+```
+
+## Picking Features and EDA
+
+Play_result is a measure of success so it is going to be the quality metric for this model. Quality hits will be those that result in a positive play result value such as a single. Features will be chosen based on their relationship to the play_result variable. I chose the following features to investigate: Exit Speed, Pitch Type, Hit Type, Bearing and Angle.
+
+### Exit Speed
+
+High exit speed means that the hit is more likely to result in an effective play such as an HR, single, double or triple. The mean exit speed for a HR is about 104 mph vs the mean exit speed for a foul ball is 75 mph. High exit speed has a relationship to positive play results.
+
+```{r, echo=FALSE}
+# Filter out NA values
+df <- df %>% filter(exit_speed != "NA")
+
+# Get df with only foul ball outcomes
+foul_ball <- df %>% filter(play_result == "foul_ball")
+# Calculate the mean exit speed for a play result = "foul_ball"
+foul_ball_mean <- mean(foul_ball$exit_speed)
+
+# Get df with only home run outcomes
+home_run <- df %>% filter(play_result == "home_run")
+# Calculate the mean exit speed for a play result = "home_run"
+home_run_mean <- mean(home_run$exit_speed)                  
+
+print(paste("Foul Ball Mean Exit Speed:", foul_ball_mean))
+print(paste("Home Run Mean Exit Speed:", home_run_mean))
+```
+
+```{r, echo=FALSE}
+# Plot exit speed box plot distribution by play result using ggplot and plotly
+plot1 <- ggplot(df, aes(x=play_result, y=exit_speed)) + geom_boxplot() +
+  labs(title="Exit Speed Distribution Among Play Results", x="Play Result",
+       y="Exit Speed") + theme(axis.text.x = element_text(angle = 45))
+
+ggplotly(plot1)
+```
+
+### Pitch Type
+
+Four seams, or fastballs and sliders are the most frequent type of pitch thrown and are most likely to result in a foul ball or an out. Pitches are more difficult are likely to be thrown most often to maximize effectiveness. The pitch type has a relationship on play result.
+
+```{r, echo=FALSE}
+# Plot pitch type frequency using ggplot and plotly
+plot2 <- ggplot(df, aes(x = pitch_type)) + geom_bar(fill='#27251F') +
+  labs(title="Pitch Type Frequency", x = "Pitch Type")
+
+ggplotly(plot2)
+
+```
+
+```{r, echo=FALSE}
+# Plot play result frequency by pitch type using ggplot and plotly
+plot3 <- ggplot(df, aes(fill=pitch_type, x=play_result)) + geom_bar(position="dodge") + labs(title = "Play Result Frequency by Pitch Type", x = "Play Result") + theme(axis.text.x = element_text(angle = 45)) +
+guides(fill=guide_legend(title="Pitch Type"))
+
+ggplotly(plot3)
+
+```
+* Highlight a pitch type to view the data in more detail
+
+### Hit Type
+
+```{r, echo=FALSE}
+# Filter out foul ball values since they skew the graph view
+subset <- df %>% filter(hit_type != "foul_ball")
+
+# Plot play result frequency by hit type using ggplot and plotly
+plot4 <- ggplot(subset, aes(fill=hit_type, x=play_result)) + geom_bar(position="dodge") + labs(title = "Play Result Frequency by Hit Type", x = "Play Result") + theme(axis.text.x = element_text(angle = 45)) +
+guides(fill=guide_legend(title="Hit Type"))
+
+ggplotly(plot4)
+
+```
+
+### Bearing
+
+```{r, echo=FALSE}
+# View play result frequency by left field vs right field
+# Filter out NA values
+df <- df %>% filter(bearing != "NA")
+
+
+# Plot play result frequency by field position using ggplot and plotly
+plot5 <- ggplot(df, aes(fill=bearing, x=play_result)) + geom_bar(position="dodge") + labs(title = "Play Result Frequency by Bearing", x = "Play Result") + theme(axis.text.x = element_text(angle = 45)) +
+guides(fill=guide_legend(title="Field Position"))
+
+ggplotly(plot5)
+
+```
+```{r, echo=FALSE}
+# Perform chi-square test to view significance
+chisq.test(df$play_result, df$bearing, correct=FALSE)
+
+```
+
+Field position plays a role in the likelihood of a play result. A play hit to left field is more likely to result in a single, double and a home run than in right field. Hits to left field are also less likely to receive an out and foul ball than one hit to right field. Also, when a chi-square test is applied, we get a p-value less than 0.05 so these variables are related.
+
+### Angle
+
+```{r, echo=FALSE}
+# Filter out NA values
+df <- df %>% filter(angle != "NA")
+
+# Plot play result frequency by initial launch angle using ggplot and plotly
+plot6 <- ggplot(df, aes(fill=angle, x=play_result)) + geom_bar(position="dodge") + labs(title = "Play Result Frequency by Angle", x = "Play Result") + theme(axis.text.x = element_text(angle = 45)) +
+guides(fill=guide_legend(title="Launch Angle"))
+
+ggplotly(plot6)
+```
+```{r, echo=FALSE}
+# Plot launch angle frequency to investigate upward launch angle significance
+plot7 <- ggplot(df, aes(x = angle)) + geom_bar(fill='#27251F') +
+  labs(title="Launch Angle Frequency", x = "Launch Angle")
+
+ggplotly(plot7)
+
+```
+
+Upward launch angles occur more frequently with ball contact, so we need to confirm that there is a correlation using a chi-square test.
+
+```{r, echo=FALSE}
+# Perform chi-square test to test for significance
+chisq.test(df$play_result, df$angle, correct=FALSE)
+
+```
+
+Since we get a p-value of less than 0.05 then we can conclude that the variables angle and play result are dependent.
+
+## Splitting Training & Testing Data
+
+```{r}
+# Filter df down to relevant columns
+df <- select(df, c(play_result, exit_speed, pitch_type, hit_type, bearing, angle))
+
+# Split into training and testing data, 70% training, 30% testing
+set.seed(1)
+
+sample <- sample(c(TRUE, FALSE), nrow(df), replace=TRUE, prob=c(0.7,0.3))
+
+# Apply sample to df
+train  <- df[sample, ]
+test   <- df[!sample, ]
+
+```
+
+## Model- Multinomial Logistic Regression for Classification
+```{r, results='hide'}
+# Build the multinomial model using the selected features to predict play result
+m1 <- multinom(play_result ~ log(exit_speed) + pitch_type + hit_type + bearing + angle, data=train)
+
+summary(m1)
+```
+
+## Predictions
+
+```{r}
+# Make predictions on our testing data
+test$predicted_outcomes <- predict(m1, test)
+
+```
+
+## Accuracy
+
+```{r, echo=FALSE}
+# Accuracy/Error
+# Percent of rows in which predicted outcome = actual outcome/ total outcomes
+test$accuracy <- ifelse(test$play_result == test$predicted_outcomes, 1, 0)
+print(paste("Percent Outcomes Correct:", sum(test$accuracy == 1) / nrow(test), "%"))
+```
+
+
+
