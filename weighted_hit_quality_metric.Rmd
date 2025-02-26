@@ -21,8 +21,7 @@ library(ggplot2)
 library(dplyr)
 library(tidyverse)
 library(plotly)
-df <- read.csv(here("<data hidden for privacy>"))
-head(df)
+df <- read.csv(here("baseball_data.csv"))
 
 ```
 
@@ -170,4 +169,4 @@ Exit Speed, Distance, Bearing and Angle will be weighted equally since they are 
 Pitch type (15%) and hit type (15%) would be weighted equally since they have significant impact on play result. Pitch type and hit type are also related. 
 - Pitch types and hit types would be weighted based on a weighted average (calculated by frequency) and then manual adjustments based on common baseball knowledge about difficulty to hit and hit type on play result.
 
-Play result (20%) would be weighed the most because scoring is important to winning games and the better the outcome of a hit, the greater the liklihood to score a run. Play result weights would be ranked based on ordinal values (home run is worth more than an out). 
+Play result (20%) would be weighed the most because scoring is important to winning games and the better the outcome of a hit, the greater the likelihood to score a run. Play result weights would be ranked based on ordinal values (home run is worth more than an out). 
